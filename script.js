@@ -21,15 +21,25 @@ function showCreateRoom() {
                 <h1>CHATEE</h1>
                 <div style="margin-bottom: 40px;">
                     <h2>CREATE</h2>
-                    <input type="text" id="username" placeholder="your name" autocomplete="off">
-                    <button id="createBtn">create room</button>
+                    <div style="background: #424242; padding: 2px;">
+                        <input type="text" id="username" placeholder="your name" autocomplete="off" style="background: #1e1e1e; margin: 0;">
+                    </div>
+                    <div style="background: #424242; padding: 2px; margin-top: 15px;">
+                        <button id="createBtn" style="background: #1e1e1e; margin: 0;">create room</button>
+                    </div>
                 </div>
                 
                 <div style="margin-top: 40px;">
                     <h2>JOIN</h2>
-                    <input type="text" id="joinCode" placeholder="room code" autocomplete="off" style="text-transform: uppercase;">
-                    <input type="text" id="joinUsername" placeholder="your name" autocomplete="off">
-                    <button id="joinBtn">join room</button>
+                    <div style="background: #424242; padding: 2px;">
+                        <input type="text" id="joinCode" placeholder="room code" autocomplete="off" style="text-transform: uppercase; background: #1e1e1e; margin: 0;">
+                    </div>
+                    <div style="background: #424242; padding: 2px; margin-top: 15px;">
+                        <input type="text" id="joinUsername" placeholder="your name" autocomplete="off" style="background: #1e1e1e; margin: 0;">
+                    </div>
+                    <div style="background: #424242; padding: 2px; margin-top: 15px;">
+                        <button id="joinBtn" style="background: #1e1e1e; margin: 0;">join room</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -45,18 +55,20 @@ function showCreateRoom() {
         
         const roomCode = generateRoomCode();
         
-        console.log('Creating room:', roomCode, username);
-        
+        // First check if table exists by trying to insert
         const { data, error } = await supabase
             .from('rooms')
             .insert([{ room_code: roomCode, created_by: username }])
             .select();
         
         if (error) {
-            console.error('Error creating room:', error);
-            alert('failed to create room: ' + error.message);
+            console.error('Error:', error);
+            if (error.message.includes('relation') || error.code === '42P01') {
+                alert('Database not setup. Please run SQL commands in Supabase.');
+            } else {
+                alert('Failed: ' + error.message);
+            }
         } else {
-            console.log('Room created:', data);
             currentRoom = roomCode;
             currentUser = username;
             showChatRoom();
@@ -73,17 +85,13 @@ function showCreateRoom() {
             return;
         }
         
-        console.log('Joining room:', roomCode);
-        
         const { data, error } = await supabase
             .from('rooms')
             .select('*')
             .eq('room_code', roomCode);
         
-        console.log('Room search result:', data, error);
-        
         if (error) {
-            alert('error checking room: ' + error.message);
+            alert('Error: ' + error.message);
         } else if (!data || data.length === 0) {
             alert('room not found');
         } else {
@@ -115,8 +123,12 @@ async function showChatRoom() {
                     </div>
                     
                     <div class="chat-input">
-                        <input type="text" id="messageInput" placeholder="type message" autocomplete="off">
-                        <button id="sendBtn">send</button>
+                        <div style="background: #424242; padding: 2px; flex: 1;">
+                            <input type="text" id="messageInput" placeholder="type message" autocomplete="off" style="background: #1e1e1e; margin: 0;">
+                        </div>
+                        <div style="background: #424242; padding: 2px;">
+                            <button id="sendBtn" style="background: #1e1e1e; margin: 0;">send</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -132,7 +144,6 @@ async function showChatRoom() {
         .on('postgres_changes', 
             { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_code=eq.${currentRoom}` },
             (payload) => {
-                console.log('New message:', payload);
                 addMessageToUI(payload.new.username, payload.new.message, payload.new.created_at);
             }
         )
@@ -143,8 +154,6 @@ async function showChatRoom() {
         const message = document.getElementById('messageInput').value.trim();
         if (!message) return;
         
-        console.log('Sending message:', message);
-        
         const { error } = await supabase
             .from('messages')
             .insert([{
@@ -154,8 +163,7 @@ async function showChatRoom() {
             }]);
         
         if (error) {
-            console.error('Error sending message:', error);
-            alert('failed to send message');
+            alert('Failed to send: ' + error.message);
         } else {
             document.getElementById('messageInput').value = '';
         }
@@ -185,13 +193,10 @@ async function loadMessages() {
         .eq('room_code', currentRoom)
         .order('created_at', { ascending: true });
     
-    console.log('Loading messages:', data);
-    
     if (data && !error) {
         const messagesDiv = document.getElementById('messages');
         if (messagesDiv) {
             messagesDiv.innerHTML = '';
-            
             data.forEach(msg => {
                 addMessageToUI(msg.username, msg.message, msg.created_at);
             });
@@ -218,7 +223,6 @@ function addMessageToUI(username, message, timestamp) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// Security: escape HTML
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;

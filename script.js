@@ -17,19 +17,19 @@ function showCreateRoom() {
     const app = document.getElementById('app');
     app.innerHTML = `
         <div class="container">
-            <div class="brutal-box">
-                <h1>💀 BRUTAL CHAT</h1>
-                <div style="margin-bottom: 30px;">
-                    <h2>⚡ CREATE ROOM</h2>
-                    <input type="text" id="username" placeholder="YOUR NAME" autocomplete="off">
-                    <button id="createBtn">» CREATE «</button>
+            <div style="background: #2d2d2d; padding: 30px;">
+                <h1>CHATEE</h1>
+                <div style="margin-bottom: 40px;">
+                    <h2>CREATE</h2>
+                    <input type="text" id="username" placeholder="your name" autocomplete="off">
+                    <button id="createBtn">create room</button>
                 </div>
                 
-                <div style="border-top: 2px solid #00ff00; padding-top: 30px;">
-                    <h2>🔗 JOIN ROOM</h2>
-                    <input type="text" id="joinCode" placeholder="ROOM CODE" autocomplete="off">
-                    <input type="text" id="joinUsername" placeholder="YOUR NAME" autocomplete="off">
-                    <button id="joinBtn">» JOIN «</button>
+                <div style="margin-top: 40px;">
+                    <h2>JOIN</h2>
+                    <input type="text" id="joinCode" placeholder="room code" autocomplete="off" style="text-transform: uppercase;">
+                    <input type="text" id="joinUsername" placeholder="your name" autocomplete="off">
+                    <button id="joinBtn">join room</button>
                 </div>
             </div>
         </div>
@@ -39,19 +39,24 @@ function showCreateRoom() {
     document.getElementById('createBtn').onclick = async () => {
         const username = document.getElementById('username').value.trim();
         if (!username) {
-            alert('ENTER YOUR NAME');
+            alert('enter your name');
             return;
         }
         
         const roomCode = generateRoomCode();
         
-        const { error } = await supabase
+        console.log('Creating room:', roomCode, username);
+        
+        const { data, error } = await supabase
             .from('rooms')
-            .insert([{ room_code: roomCode, created_by: username }]);
+            .insert([{ room_code: roomCode, created_by: username }])
+            .select();
         
         if (error) {
-            alert('FAILED TO CREATE ROOM');
+            console.error('Error creating room:', error);
+            alert('failed to create room: ' + error.message);
         } else {
+            console.log('Room created:', data);
             currentRoom = roomCode;
             currentUser = username;
             showChatRoom();
@@ -64,18 +69,23 @@ function showCreateRoom() {
         const username = document.getElementById('joinUsername').value.trim();
         
         if (!roomCode || !username) {
-            alert('ENTER ROOM CODE AND YOUR NAME');
+            alert('enter room code and your name');
             return;
         }
+        
+        console.log('Joining room:', roomCode);
         
         const { data, error } = await supabase
             .from('rooms')
             .select('*')
-            .eq('room_code', roomCode)
-            .single();
+            .eq('room_code', roomCode);
         
-        if (error || !data) {
-            alert('ROOM NOT FOUND');
+        console.log('Room search result:', data, error);
+        
+        if (error) {
+            alert('error checking room: ' + error.message);
+        } else if (!data || data.length === 0) {
+            alert('room not found');
         } else {
             currentRoom = roomCode;
             currentUser = username;
@@ -89,24 +99,24 @@ async function showChatRoom() {
     const app = document.getElementById('app');
     app.innerHTML = `
         <div class="room-container">
-            <div class="container" style="height: 100vh; display: flex; flex-direction: column;">
-                <div class="brutal-box" style="flex: 1; display: flex; flex-direction: column;">
+            <div class="container" style="height: 100vh; display: flex; flex-direction: column; padding: 0;">
+                <div style="flex: 1; display: flex; flex-direction: column;">
                     <div class="chat-header">
-                        <div class="room-code">📡 ROOM: ${currentRoom}</div>
-                        <button class="leave-btn" id="leaveBtn">» LEAVE «</button>
+                        <div class="room-code">${currentRoom}</div>
+                        <button class="leave-btn" id="leaveBtn">leave</button>
                     </div>
                     
                     <div class="messages-container" id="messages">
                         <div class="message">
                             <small>${formatTime()}</small><br>
-                            <strong>> SYSTEM</strong><br>
-                            JOINED ROOM ${currentRoom}
+                            <strong>system</strong><br>
+                            joined room ${currentRoom}
                         </div>
                     </div>
                     
                     <div class="chat-input">
-                        <input type="text" id="messageInput" placeholder="TYPE YOUR MESSAGE" autocomplete="off">
-                        <button id="sendBtn">» SEND «</button>
+                        <input type="text" id="messageInput" placeholder="type message" autocomplete="off">
+                        <button id="sendBtn">send</button>
                     </div>
                 </div>
             </div>
@@ -114,14 +124,15 @@ async function showChatRoom() {
     `;
     
     // Load existing messages
-    loadMessages();
+    await loadMessages();
     
     // Subscribe to new messages
     const subscription = supabase
-        .channel('messages')
+        .channel(`room-${currentRoom}`)
         .on('postgres_changes', 
             { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_code=eq.${currentRoom}` },
             (payload) => {
+                console.log('New message:', payload);
                 addMessageToUI(payload.new.username, payload.new.message, payload.new.created_at);
             }
         )
@@ -132,6 +143,8 @@ async function showChatRoom() {
         const message = document.getElementById('messageInput').value.trim();
         if (!message) return;
         
+        console.log('Sending message:', message);
+        
         const { error } = await supabase
             .from('messages')
             .insert([{
@@ -140,7 +153,10 @@ async function showChatRoom() {
                 message: message
             }]);
         
-        if (!error) {
+        if (error) {
+            console.error('Error sending message:', error);
+            alert('failed to send message');
+        } else {
             document.getElementById('messageInput').value = '';
         }
     };
@@ -169,26 +185,32 @@ async function loadMessages() {
         .eq('room_code', currentRoom)
         .order('created_at', { ascending: true });
     
+    console.log('Loading messages:', data);
+    
     if (data && !error) {
         const messagesDiv = document.getElementById('messages');
-        messagesDiv.innerHTML = '';
-        
-        data.forEach(msg => {
-            addMessageToUI(msg.username, msg.message, msg.created_at);
-        });
+        if (messagesDiv) {
+            messagesDiv.innerHTML = '';
+            
+            data.forEach(msg => {
+                addMessageToUI(msg.username, msg.message, msg.created_at);
+            });
+        }
     }
 }
 
 // Add message to UI
 function addMessageToUI(username, message, timestamp) {
     const messagesDiv = document.getElementById('messages');
+    if (!messagesDiv) return;
+    
     const time = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : formatTime();
     
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
     messageDiv.innerHTML = `
         <small>${time}</small><br>
-        <strong>> ${username.toUpperCase()}</strong><br>
+        <strong>${username.toLowerCase()}</strong><br>
         ${escapeHtml(message)}
     `;
     
